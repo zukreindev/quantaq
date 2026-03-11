@@ -43,20 +43,20 @@ func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, opti
 	}
 
 	if metadata == nil {
-        metadata = make(map[string]string)
-    }
+		metadata = make(map[string]string)
+	}
 
 	now := time.Now().UTC()
 
 	job := &model.Job{
-		ID: uuid.NewString(),
-		Queue: queue,
-		Payload: payload,
-		Status: model.StatusReady,
+		ID:          uuid.NewString(),
+		Queue:       queue,
+		Payload:     payload,
+		Status:      model.StatusReady,
 		MaxAttempts: maxAttempts,
-		RunAt: runAt.UTC(),
-		CreatedAt: now,
-		Meta: metadata,
+		RunAt:       runAt.UTC(),
+		CreatedAt:   now,
+		Meta:        metadata,
 	}
 
 	jobKey := quantaqRedis.JobKey(job.ID)
@@ -143,4 +143,36 @@ func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []model.Jo
 	}
 
 	return result, nil
+}
+
+func (c *Client) Cancel(ctx context.Context, jobID string) error {
+	if jobID == "" {
+		return errors.New("job ID is required")
+	}
+
+	jobKey := quantaqRedis.JobKey(jobID)
+
+	exists, err := c.redis.HExists(ctx, jobKey, "data").Result()
+	if err != nil {
+		return fmt.Errorf("check job exists: %w", err)
+	}
+
+	if !exists {
+		return errors.New("cancel job: job not found")
+	}
+
+	currentStatus, err := c.redis.HGet(ctx, jobKey, "status").Result()
+	if err != nil {
+		return fmt.Errorf("get job status: %w", err)
+	}
+
+	if currentStatus == string(model.StatusAcked) || currentStatus == string(model.StatusFailed) || currentStatus == string(model.StatusCanceled) {
+		return errors.New("cancel job: job already completed or canceled")
+	}
+
+	if _, err := c.redis.HSet(ctx, jobKey, "status", string(model.StatusCanceled)).Result(); err != nil {
+		return fmt.Errorf("cancel job: %w", err)
+	}
+
+	return nil
 }
