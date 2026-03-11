@@ -85,7 +85,62 @@ func (c *Client) Fetch(ctx context.Context, queue string) (*model.Job, error) {
 		return nil, errors.New("queue name is required")
 	}
 
-
 	return nil, nil
+}
 
+func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []model.Job, options EnqueueOptions) ([]*model.Job, error) {
+	if queue == "" {
+		return nil, errors.New("queue name is required")
+	}
+
+	if len(jobs) == 0 {
+		return nil, errors.New("jobs list is empty")
+	}
+
+	maxAttempts := options.MaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
+
+	now := time.Now().UTC()
+	waitingKey := quantaqRedis.WaitingKey(queue)
+	pipe := c.redis.TxPipeline()
+
+	result := make([]*model.Job, 0, len(jobs))
+
+	for i := range jobs {
+		job := &jobs[i]
+		job.ID = uuid.NewString()
+		job.Queue = queue
+		job.Status = model.StatusReady
+		job.CreatedAt = now
+
+		if job.MaxAttempts <= 0 {
+			job.MaxAttempts = maxAttempts
+		}
+		if !options.RunAt.IsZero() {
+			job.RunAt = options.RunAt.UTC()
+		}
+		if job.Meta == nil {
+			job.Meta = options.Metadata
+		}
+
+		data, err := json.Marshal(job)
+		if err != nil {
+			return nil, fmt.Errorf("marshal job %d: %w", i, err)
+		}
+
+		jobKey := quantaqRedis.JobKey(job.ID)
+		pipe.HSet(ctx, jobKey, "data", data)
+		pipe.HSet(ctx, jobKey, "status", string(model.StatusReady))
+		pipe.LPush(ctx, waitingKey, job.ID)
+
+		result = append(result, job)
+	}
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, fmt.Errorf("enqueue batch: %w", err)
+	}
+
+	return result, nil
 }
