@@ -229,3 +229,24 @@ func (c *Client) QueueStats(ctx context.Context, queue string) (ready, leased, f
 
 	return ready, leased, failed, nil
 }
+
+func (c *Client) PurgeQueue(ctx context.Context, queue string) error {
+	if queue == "" {
+		return errors.New("queue name is required")
+	}
+	
+	waitingKey := quantaqRedis.WaitingKey(queue)
+	processingKey := quantaqRedis.ProcessingKey(queue)
+	failedKey := quantaqRedis.FailedKey(queue)
+
+	pipe := c.redis.TxPipeline()
+	pipe.Del(ctx, waitingKey)
+	pipe.Del(ctx, processingKey)
+	pipe.Del(ctx, failedKey)
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("purge queue: %w", err)
+	}
+
+	return nil
+}
