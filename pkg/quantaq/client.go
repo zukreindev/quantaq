@@ -176,3 +176,56 @@ func (c *Client) Cancel(ctx context.Context, jobID string) error {
 
 	return nil
 }
+
+
+func (c *Client) GetJob(ctx context.Context, jobID string) (*model.Job, error) {
+	if jobID == "" {
+		return nil, errors.New("job ID is required")
+	}
+
+	jobKey := quantaqRedis.JobKey(jobID)
+
+	data, err := c.redis.HGet(ctx, jobKey, "data").Bytes()
+	if err != nil {
+		return nil, fmt.Errorf("get job data: %w", err)
+	}
+
+	var job model.Job
+	if err := json.Unmarshal(data, &job); err != nil {
+		return nil, fmt.Errorf("unmarshal job data: %w", err)
+	}
+
+	return &job, nil
+}
+
+
+func (c *Client) QueueStats(ctx context.Context, queue string) (ready, leased, failed int64, err error) {
+	if queue == "" {
+		err = errors.New("queue name is required")
+		return
+	}
+
+	waitingKey := quantaqRedis.WaitingKey(queue)
+	processingKey := quantaqRedis.ProcessingKey(queue)
+	failedKey := quantaqRedis.FailedKey(queue)
+	
+	ready, err = c.redis.LLen(ctx, waitingKey).Result()
+	if err != nil {
+		err = fmt.Errorf("get ready count: %w", err)
+		return
+	}
+
+	leased, err = c.redis.LLen(ctx, processingKey).Result()
+	if err != nil {
+		err = fmt.Errorf("get leased count: %w", err)
+		return
+	}
+
+	failed, err = c.redis.LLen(ctx, failedKey).Result()
+	if err != nil {
+		err = fmt.Errorf("get failed count: %w", err)
+		return
+	}
+
+	return ready, leased, failed, nil
+}
