@@ -5,10 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"quantaq/internal/metrics"
-	model "quantaq/internal/model"
-	quantaqRedis "quantaq/internal/storage/redis"
-	"quantaq/pkg/quantaq"
+	"github.com/zukrein/quantaq"
+	quantaqRedis "github.com/zukrein/quantaq/internal/redis"
 
 	"github.com/alicebob/miniredis/v2"
 )
@@ -19,7 +17,7 @@ type mockClock struct {
 
 func (m *mockClock) Now() time.Time { return m.now }
 
-func setup(t *testing.T) (*quantaq.Client, *miniredis.Miniredis, *metrics.InMemoryCollector, *mockClock) {
+func setup(t *testing.T) (*quantaq.Client, *miniredis.Miniredis, *quantaq.InMemoryCollector, *mockClock) {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb, err := quantaqRedis.NewClient(mr.Addr(), "", 0)
@@ -28,7 +26,7 @@ func setup(t *testing.T) (*quantaq.Client, *miniredis.Miniredis, *metrics.InMemo
 	}
 
 	mc := &mockClock{now: time.Date(2026, 3, 11, 12, 0, 0, 0, time.UTC)}
-	col := metrics.NewInMemoryCollector()
+	col := quantaq.NewInMemoryCollector()
 
 	client := quantaq.NewClient(rdb, quantaq.WithClock(mc), quantaq.WithMetrics(col))
 	return client, mr, col, mc
@@ -48,8 +46,8 @@ func TestEnqueue(t *testing.T) {
 	if job.Queue != "email" {
 		t.Errorf("queue = %q, want %q", job.Queue, "email")
 	}
-	if job.Status != model.StatusReady {
-		t.Errorf("status = %q, want %q", job.Status, model.StatusReady)
+	if job.Status != quantaq.StatusReady {
+		t.Errorf("status = %q, want %q", job.Status, quantaq.StatusReady)
 	}
 	if job.MaxAttempts != 5 {
 		t.Errorf("max_attempts = %d, want 5", job.MaxAttempts)
@@ -117,7 +115,7 @@ func TestEnqueueBatch(t *testing.T) {
 	client, mr, col, _ := setup(t)
 	ctx := context.Background()
 
-	jobs := []model.Job{
+	jobs := []quantaq.Job{
 		{Payload: []byte(`{"n":1}`)},
 		{Payload: []byte(`{"n":2}`)},
 		{Payload: []byte(`{"n":3}`)},
@@ -159,7 +157,7 @@ func TestEnqueueBatch_EmptyJobs(t *testing.T) {
 	client, _, _, _ := setup(t)
 	ctx := context.Background()
 
-	_, err := client.EnqueueBatch(ctx, "q", []model.Job{}, quantaq.EnqueueOptions{})
+	_, err := client.EnqueueBatch(ctx, "q", []quantaq.Job{}, quantaq.EnqueueOptions{})
 	if err == nil {
 		t.Fatal("expected error for empty jobs")
 	}
@@ -184,8 +182,8 @@ func TestFetch(t *testing.T) {
 	if job.ID != enqueued.ID {
 		t.Errorf("id = %q, want %q", job.ID, enqueued.ID)
 	}
-	if job.Status != model.StatusLeased {
-		t.Errorf("status = %q, want %q", job.Status, model.StatusLeased)
+	if job.Status != quantaq.StatusLeased {
+		t.Errorf("status = %q, want %q", job.Status, quantaq.StatusLeased)
 	}
 	if job.Attempts != 1 {
 		t.Errorf("attempts = %d, want 1", job.Attempts)
@@ -235,8 +233,8 @@ func TestAck(t *testing.T) {
 
 	// Status in Redis should be acked
 	status := mr.HGet(quantaqRedis.JobKey(enqueued.ID), "status")
-	if status != string(model.StatusAcked) {
-		t.Errorf("redis status = %q, want %q", status, model.StatusAcked)
+	if status != string(quantaq.StatusAcked) {
+		t.Errorf("redis status = %q, want %q", status, quantaq.StatusAcked)
 	}
 
 	snap := col.Snapshot()
@@ -313,8 +311,8 @@ func TestNack_DLQ(t *testing.T) {
 	}
 
 	status := mr.HGet(quantaqRedis.JobKey(enqueued.ID), "status")
-	if status != string(model.StatusDLQ) {
-		t.Errorf("redis status = %q, want %q", status, model.StatusDLQ)
+	if status != string(quantaq.StatusDLQ) {
+		t.Errorf("redis status = %q, want %q", status, quantaq.StatusDLQ)
 	}
 
 	snap := col.Snapshot()
@@ -337,8 +335,8 @@ func TestCancel(t *testing.T) {
 	}
 
 	status := mr.HGet(quantaqRedis.JobKey(enqueued.ID), "status")
-	if status != string(model.StatusCanceled) {
-		t.Errorf("status = %q, want %q", status, model.StatusCanceled)
+	if status != string(quantaq.StatusCanceled) {
+		t.Errorf("status = %q, want %q", status, quantaq.StatusCanceled)
 	}
 
 	snap := col.Snapshot()

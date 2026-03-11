@@ -23,7 +23,7 @@ QuantaQ is a simple yet powerful job queue built on top of Redis. It provides re
 ## Installation
 
 ```bash
-go get quantaq
+go get github.com/zukrein/quantaq
 ```
 
 **Requirements:** Go 1.25+ and a running Redis instance.
@@ -41,12 +41,12 @@ import (
     "log"
     "time"
 
-    "quantaq/internal/storage/redis"
-    "quantaq/pkg/quantaq"
+    quantaqRedis "github.com/zukrein/quantaq/internal/redis"
+    "github.com/zukrein/quantaq"
 )
 
 func main() {
-    redisClient, err := redis.NewClient("localhost:6379", "", 0)
+    redisClient, err := quantaqRedis.NewClient("localhost:6379", "", 0)
     if err != nil {
         log.Fatal(err)
     }
@@ -82,13 +82,12 @@ import (
     "syscall"
     "time"
 
-    "quantaq/internal/model"
-    "quantaq/internal/storage/redis"
-    "quantaq/pkg/quantaq"
+    quantaqRedis "github.com/zukrein/quantaq/internal/redis"
+    "github.com/zukrein/quantaq"
 )
 
 func main() {
-    redisClient, err := redis.NewClient("localhost:6379", "", 0)
+    redisClient, err := quantaqRedis.NewClient("localhost:6379", "", 0)
     if err != nil {
         log.Fatal(err)
     }
@@ -101,7 +100,7 @@ func main() {
         ShutdownTimeout: 30 * time.Second,
     })
 
-    worker.RegisterHandler("email", func(ctx context.Context, job *model.Job) error {
+    worker.RegisterHandler("email", func(ctx context.Context, job *quantaq.Job) error {
         fmt.Printf("Processing job %s: %s\n", job.ID, string(job.Payload))
         // Your processing logic here
         return nil
@@ -118,7 +117,7 @@ func main() {
 ### Batch Enqueue
 
 ```go
-jobs := []model.Job{
+jobs := []quantaq.Job{
     {Payload: []byte(`{"to":"alice@example.com"}`)},
     {Payload: []byte(`{"to":"bob@example.com"}`)},
     {Payload: []byte(`{"to":"charlie@example.com"}`)},
@@ -236,9 +235,7 @@ worker.Start(ctx)
 QuantaQ ships with a pluggable metrics system. Use the built-in `InMemoryCollector` or implement the `Collector` interface for custom integrations (Prometheus, StatsD, etc.).
 
 ```go
-import "quantaq/internal/metrics"
-
-collector := metrics.NewInMemoryCollector()
+collector := quantaq.NewInMemoryCollector()
 client := quantaq.NewClient(redisClient, quantaq.WithMetrics(collector))
 
 // After processing some jobs...
@@ -288,15 +285,15 @@ client := quantaq.NewClient(redisClient, quantaq.WithClock(mc))
 
 ```
 quantaq/
+├── client.go            # Client: Enqueue, Cancel, GetJob, QueueStats, PurgeQueue
+├── clock.go             # Clock interface and RealClock implementation
+├── job.go               # Job model and status constants
+├── metrics.go           # Collector interface, InMemoryCollector, NoopCollector
+├── processor.go         # Worker pool: NewWorker, RegisterHandler, Start
+├── worker.go            # Fetch, Ack, Nack operations
 ├── internal/
-│   ├── clock/           # Clock interface and real implementation
-│   ├── metrics/         # Metrics collector interface and implementations
-│   ├── model/           # Job model and status constants
-│   └── storage/
-│       └── redis/       # Redis client wrapper and key helpers
-├── pkg/
-│   └── quantaq/         # Public API: Client, Worker, Processor
-├── test/                # Integration tests
+│   └── redis/           # Redis client wrapper and key helpers
+├── test/                # Unit tests (miniredis-based)
 ├── go.mod
 └── README.md
 ```

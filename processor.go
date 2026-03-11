@@ -3,12 +3,11 @@ package quantaq
 import (
 	"context"
 	"fmt"
-	model "quantaq/internal/model"
 	"sync"
 	"time"
 )
 
-type HandlerFunc func(ctx context.Context, job *model.Job) error
+type HandlerFunc func(ctx context.Context, job *Job) error
 
 type Worker struct {
 	client          *Client

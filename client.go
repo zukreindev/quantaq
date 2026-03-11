@@ -7,35 +7,32 @@ import (
 	"fmt"
 	"time"
 
-	"quantaq/internal/clock"
-	"quantaq/internal/metrics"
-	model "quantaq/internal/model"
-	quantaqRedis "quantaq/internal/storage/redis"
+	quantaqRedis "github.com/zukrein/quantaq/internal/redis"
 
 	"github.com/google/uuid"
 )
 
 type Client struct {
 	redis   *quantaqRedis.Client
-	clock   clock.Clock
-	metrics metrics.Collector
+	clock   Clock
+	metrics Collector
 }
 
 type ClientOption func(*Client)
 
-func WithClock(c clock.Clock) ClientOption {
+func WithClock(c Clock) ClientOption {
 	return func(cl *Client) { cl.clock = c }
 }
 
-func WithMetrics(m metrics.Collector) ClientOption {
+func WithMetrics(m Collector) ClientOption {
 	return func(cl *Client) { cl.metrics = m }
 }
 
 func NewClient(redisClient *quantaqRedis.Client, opts ...ClientOption) *Client {
 	c := &Client{
 		redis:   redisClient,
-		clock:   clock.RealClock{},
-		metrics: metrics.NoopCollector{},
+		clock:   RealClock{},
+		metrics: NoopCollector{},
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -49,7 +46,7 @@ type EnqueueOptions struct {
 	Metadata    map[string]string
 }
 
-func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, options EnqueueOptions) (*model.Job, error) {
+func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, options EnqueueOptions) (*Job, error) {
 	if queue == "" {
 		return nil, errors.New("queue name is required")
 	}
@@ -68,11 +65,11 @@ func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, opti
 
 	now := c.clock.Now()
 
-	job := &model.Job{
+	job := &Job{
 		ID:          uuid.NewString(),
 		Queue:       queue,
 		Payload:     payload,
-		Status:      model.StatusReady,
+		Status:      StatusReady,
 		MaxAttempts: maxAttempts,
 		RunAt:       runAt.UTC(),
 		CreatedAt:   now,
@@ -90,7 +87,7 @@ func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, opti
 	pipe := c.redis.TxPipeline()
 
 	pipe.HSet(ctx, jobKey, "data", data)
-	pipe.HSet(ctx, jobKey, "status", string(model.StatusReady))
+	pipe.HSet(ctx, jobKey, "status", string(StatusReady))
 	pipe.LPush(ctx, waitingKey, job.ID)
 
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -101,7 +98,7 @@ func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, opti
 	return job, nil
 }
 
-func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []model.Job, options EnqueueOptions) ([]*model.Job, error) {
+func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []Job, options EnqueueOptions) ([]*Job, error) {
 	if queue == "" {
 		return nil, errors.New("queue name is required")
 	}
@@ -119,13 +116,13 @@ func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []model.Jo
 	waitingKey := quantaqRedis.WaitingKey(queue)
 	pipe := c.redis.TxPipeline()
 
-	result := make([]*model.Job, 0, len(jobs))
+	result := make([]*Job, 0, len(jobs))
 
 	for i := range jobs {
 		job := &jobs[i]
 		job.ID = uuid.NewString()
 		job.Queue = queue
-		job.Status = model.StatusReady
+		job.Status = StatusReady
 		job.CreatedAt = now
 
 		if job.MaxAttempts <= 0 {
@@ -145,7 +142,7 @@ func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []model.Jo
 
 		jobKey := quantaqRedis.JobKey(job.ID)
 		pipe.HSet(ctx, jobKey, "data", data)
-		pipe.HSet(ctx, jobKey, "status", string(model.StatusReady))
+		pipe.HSet(ctx, jobKey, "status", string(StatusReady))
 		pipe.LPush(ctx, waitingKey, job.ID)
 
 		result = append(result, job)
@@ -182,11 +179,11 @@ func (c *Client) Cancel(ctx context.Context, jobID string) error {
 		return fmt.Errorf("get job status: %w", err)
 	}
 
-	if currentStatus == string(model.StatusAcked) || currentStatus == string(model.StatusFailed) || currentStatus == string(model.StatusCanceled) {
+	if currentStatus == string(StatusAcked) || currentStatus == string(StatusFailed) || currentStatus == string(StatusCanceled) {
 		return errors.New("cancel job: job already completed or canceled")
 	}
 
-	if _, err := c.redis.HSet(ctx, jobKey, "status", string(model.StatusCanceled)).Result(); err != nil {
+	if _, err := c.redis.HSet(ctx, jobKey, "status", string(StatusCanceled)).Result(); err != nil {
 		return fmt.Errorf("cancel job: %w", err)
 	}
 
@@ -194,7 +191,7 @@ func (c *Client) Cancel(ctx context.Context, jobID string) error {
 	return nil
 }
 
-func (c *Client) GetJob(ctx context.Context, jobID string) (*model.Job, error) {
+func (c *Client) GetJob(ctx context.Context, jobID string) (*Job, error) {
 	if jobID == "" {
 		return nil, errors.New("job ID is required")
 	}
@@ -206,7 +203,7 @@ func (c *Client) GetJob(ctx context.Context, jobID string) (*model.Job, error) {
 		return nil, fmt.Errorf("get job data: %w", err)
 	}
 
-	var job model.Job
+	var job Job
 	if err := json.Unmarshal(data, &job); err != nil {
 		return nil, fmt.Errorf("unmarshal job data: %w", err)
 	}

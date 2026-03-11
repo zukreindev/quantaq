@@ -1,4 +1,4 @@
-package metrics
+package quantaq
 
 import "go.uber.org/atomic"
 
