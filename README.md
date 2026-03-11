@@ -23,7 +23,7 @@ QuantaQ is a simple yet powerful job queue built on top of Redis. It provides re
 ## Installation
 
 ```bash
-go get github.com/zukrein/quantaq
+go get github.com/zukreindev/quantaq
 ```
 
 **Requirements:** Go 1.25+ and a running Redis instance.
@@ -41,8 +41,8 @@ import (
     "log"
     "time"
 
-    quantaqRedis "github.com/zukrein/quantaq/internal/redis"
-    "github.com/zukrein/quantaq"
+    quantaqRedis "github.com/zukreindev/quantaq/internal/redis"
+    "github.com/zukreindev/quantaq"
 )
 
 func main() {
@@ -82,8 +82,8 @@ import (
     "syscall"
     "time"
 
-    quantaqRedis "github.com/zukrein/quantaq/internal/redis"
-    "github.com/zukrein/quantaq"
+    quantaqRedis "github.com/zukreindev/quantaq/internal/redis"
+    "github.com/zukreindev/quantaq"
 )
 
 func main() {

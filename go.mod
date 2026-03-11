@@ -1,4 +1,4 @@
-module github.com/zukrein/quantaq
+module github.com/zukreindev/quantaq
 
 go 1.25.0
 

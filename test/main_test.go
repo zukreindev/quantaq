@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zukrein/quantaq"
-	quantaqRedis "github.com/zukrein/quantaq/internal/redis"
+	"github.com/zukreindev/quantaq"
+	quantaqRedis "github.com/zukreindev/quantaq/internal/redis"
 
 	"github.com/alicebob/miniredis/v2"
 )

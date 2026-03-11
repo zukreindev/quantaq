@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	quantaqRedis "github.com/zukrein/quantaq/internal/redis"
+	quantaqRedis "github.com/zukreindev/quantaq/internal/redis"
 )
 
 func (c *Client) Fetch(ctx context.Context, queue string) (*Job, error) {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	quantaqRedis "github.com/zukrein/quantaq/internal/redis"
+	quantaqRedis "github.com/zukreindev/quantaq/internal/redis"
 
 	"github.com/google/uuid"
 )
