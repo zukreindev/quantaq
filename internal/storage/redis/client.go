@@ -2,7 +2,7 @@ package redis
 
 import (
 	"context"
-	goredis  "github.com/redis/go-redis/v9"
+	goredis "github.com/redis/go-redis/v9"
 )
 
 type Client struct {
