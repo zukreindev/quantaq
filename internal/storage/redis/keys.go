@@ -1,6 +1,9 @@
 package redis
 
-import "fmt"
+import (
+	"fmt"
+	goredis "github.com/redis/go-redis/v9"
+)
 
 func WaitingKey(name string) string {
 	return fmt.Sprintf("queue:%s:waiting", name)
@@ -17,3 +20,5 @@ func FailedKey(name string) string {
 func JobKey(id string) string {
 	return fmt.Sprintf("job:%s", id)
 }
+
+var Nil = goredis.Nil

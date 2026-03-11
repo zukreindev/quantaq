@@ -80,14 +80,6 @@ func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, opti
 	return job, nil
 }
 
-func (c *Client) Fetch(ctx context.Context, queue string) (*model.Job, error) {
-	if queue == "" {
-		return nil, errors.New("queue name is required")
-	}
-
-	return nil, nil
-}
-
 func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []model.Job, options EnqueueOptions) ([]*model.Job, error) {
 	if queue == "" {
 		return nil, errors.New("queue name is required")
