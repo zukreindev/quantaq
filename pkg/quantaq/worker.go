@@ -7,7 +7,6 @@ import (
 	"fmt"
 	model "quantaq/internal/model"
 	quantaqRedis "quantaq/internal/storage/redis"
-	"time"
 )
 
 func (c *Client) Fetch(ctx context.Context, queue string) (*model.Job, error) {
@@ -37,7 +36,7 @@ func (c *Client) Fetch(ctx context.Context, queue string) (*model.Job, error) {
 
 	job.Status = model.StatusLeased
 	job.Attempts++
-	now := time.Now().UTC()
+	now := c.clock.Now()
 	job.StartedAt = &now
 	job.LastAttemptAt = &now
 
@@ -53,8 +52,8 @@ func (c *Client) Fetch(ctx context.Context, queue string) (*model.Job, error) {
 	if _, err := transaction.Exec(ctx); err != nil {
 		return nil, fmt.Errorf("update job status transaction: %w", err)
 	}
-	
 
+	c.metrics.JobFetched(queue)
 	return &job, nil
 }
 
@@ -88,7 +87,7 @@ func (c *Client) Ack(ctx context.Context, queue, jobID string) error {
 		return fmt.Errorf("unmarshal job data: %w", err)
 	}
 
-	now := time.Now().UTC()
+	now := c.clock.Now()
 	job.Status = model.StatusAcked
 	job.FinishedAt = &now
 
@@ -107,6 +106,7 @@ func (c *Client) Ack(ctx context.Context, queue, jobID string) error {
 		return fmt.Errorf("ack job transaction: %w", err)
 	}
 
+	c.metrics.JobAcked(queue)
 	return nil
 }
 
@@ -121,7 +121,7 @@ func (c *Client) Nack(ctx context.Context, queue, jobID, errorMessage string) er
 
 	jobKey := quantaqRedis.JobKey(jobID)
 
-	status, err := c.redis.HGet(ctx, jobKey, "status").Result()	
+	status, err := c.redis.HGet(ctx, jobKey, "status").Result()
 	if err != nil {
 		return fmt.Errorf("get job status: %w", err)
 	}
@@ -140,13 +140,12 @@ func (c *Client) Nack(ctx context.Context, queue, jobID, errorMessage string) er
 		return fmt.Errorf("unmarshal job data: %w", err)
 	}
 
-	now := time.Now().UTC()
+	now := c.clock.Now()
 	job.Status = model.StatusReady
 	job.LastAttemptAt = &now
 	job.LastError = errorMessage
 	job.Attempts++
 
-	
 	if job.Attempts >= job.MaxAttempts {
 		job.Status = model.StatusDLQ
 		job.FinishedAt = &now
@@ -156,13 +155,13 @@ func (c *Client) Nack(ctx context.Context, queue, jobID, errorMessage string) er
 	if err != nil {
 		return fmt.Errorf("marshal job data: %w", err)
 	}
-	
+
 	transaction := c.redis.TxPipeline()
 
 	transaction.HSet(ctx, jobKey, "status", string(job.Status))
 	transaction.HSet(ctx, jobKey, "data", jsonData)
 	transaction.LRem(ctx, quantaqRedis.ProcessingKey(queue), 1, jobID)
-	
+
 	switch job.Status {
 	case model.StatusReady:
 		transaction.RPush(ctx, quantaqRedis.WaitingKey(queue), jobID)
@@ -174,5 +173,10 @@ func (c *Client) Nack(ctx context.Context, queue, jobID, errorMessage string) er
 		return fmt.Errorf("nack job transaction: %w", err)
 	}
 
+	if job.Status == model.StatusDLQ {
+		c.metrics.JobDLQ(queue)
+	} else {
+		c.metrics.JobNacked(queue)
+	}
 	return nil
 }

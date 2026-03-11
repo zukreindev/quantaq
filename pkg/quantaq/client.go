@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"quantaq/internal/clock"
+	"quantaq/internal/metrics"
 	model "quantaq/internal/model"
 	quantaqRedis "quantaq/internal/storage/redis"
 
@@ -14,13 +16,31 @@ import (
 )
 
 type Client struct {
-	redis *quantaqRedis.Client
+	redis   *quantaqRedis.Client
+	clock   clock.Clock
+	metrics metrics.Collector
 }
 
-func NewClient(redisClient *quantaqRedis.Client) *Client {
-	return &Client{
-		redis: redisClient,
+type ClientOption func(*Client)
+
+func WithClock(c clock.Clock) ClientOption {
+	return func(cl *Client) { cl.clock = c }
+}
+
+func WithMetrics(m metrics.Collector) ClientOption {
+	return func(cl *Client) { cl.metrics = m }
+}
+
+func NewClient(redisClient *quantaqRedis.Client, opts ...ClientOption) *Client {
+	c := &Client{
+		redis:   redisClient,
+		clock:   clock.RealClock{},
+		metrics: metrics.NoopCollector{},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 type EnqueueOptions struct {
@@ -46,7 +66,7 @@ func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, opti
 		metadata = make(map[string]string)
 	}
 
-	now := time.Now().UTC()
+	now := c.clock.Now()
 
 	job := &model.Job{
 		ID:          uuid.NewString(),
@@ -77,6 +97,7 @@ func (c *Client) Enqueue(ctx context.Context, queue string, payload []byte, opti
 		return nil, fmt.Errorf("enqueue job: %w", err)
 	}
 
+	c.metrics.JobEnqueued(queue)
 	return job, nil
 }
 
@@ -94,7 +115,7 @@ func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []model.Jo
 		maxAttempts = 3
 	}
 
-	now := time.Now().UTC()
+	now := c.clock.Now()
 	waitingKey := quantaqRedis.WaitingKey(queue)
 	pipe := c.redis.TxPipeline()
 
@@ -134,6 +155,9 @@ func (c *Client) EnqueueBatch(ctx context.Context, queue string, jobs []model.Jo
 		return nil, fmt.Errorf("enqueue batch: %w", err)
 	}
 
+	for range result {
+		c.metrics.JobEnqueued(queue)
+	}
 	return result, nil
 }
 
@@ -166,9 +190,9 @@ func (c *Client) Cancel(ctx context.Context, jobID string) error {
 		return fmt.Errorf("cancel job: %w", err)
 	}
 
+	c.metrics.JobCanceled("")
 	return nil
 }
-
 
 func (c *Client) GetJob(ctx context.Context, jobID string) (*model.Job, error) {
 	if jobID == "" {
@@ -190,7 +214,6 @@ func (c *Client) GetJob(ctx context.Context, jobID string) (*model.Job, error) {
 	return &job, nil
 }
 
-
 func (c *Client) QueueStats(ctx context.Context, queue string) (ready, leased, failed int64, err error) {
 	if queue == "" {
 		err = errors.New("queue name is required")
@@ -200,7 +223,7 @@ func (c *Client) QueueStats(ctx context.Context, queue string) (ready, leased, f
 	waitingKey := quantaqRedis.WaitingKey(queue)
 	processingKey := quantaqRedis.ProcessingKey(queue)
 	failedKey := quantaqRedis.FailedKey(queue)
-	
+
 	ready, err = c.redis.LLen(ctx, waitingKey).Result()
 	if err != nil {
 		err = fmt.Errorf("get ready count: %w", err)
@@ -226,7 +249,7 @@ func (c *Client) PurgeQueue(ctx context.Context, queue string) error {
 	if queue == "" {
 		return errors.New("queue name is required")
 	}
-	
+
 	waitingKey := quantaqRedis.WaitingKey(queue)
 	processingKey := quantaqRedis.ProcessingKey(queue)
 	failedKey := quantaqRedis.FailedKey(queue)
